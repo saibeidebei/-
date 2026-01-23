@@ -1,0 +1,5 @@
+{
+  "name": "口语化字幕大师 (Subtitle Colloquializer)",
+  "description": "一个专业的字幕翻译与校对工具，利用 Gemini API 将原始字幕或已有翻译转化为更加地道、自然的中文口语。支持双字幕对比校对与实时编辑导出。",
+  "requestFramePermissions": []
+}

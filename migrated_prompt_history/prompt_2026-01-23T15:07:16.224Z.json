@@ -1,0 +1,220 @@
+[
+  {
+    "id": 0,
+    "author": "user",
+    "payload": {
+      "type": "text",
+      "text": "我现在要写一个翻译字幕的小程序，要求是传两个字幕文件，翻译对着原文进行对比进行校验，并且需要更加口语化，主要是在中文语境下",
+      "files": [],
+      "fileUploads": [],
+      "cMarkNode": {}
+    },
+    "createdTimestamp": {
+      "seconds": 1769180579,
+      "nanos": 997000000
+    }
+  },
+  {
+    "id": 1,
+    "author": "model",
+    "payload": {
+      "type": "thinking",
+      "text": "**Developing the Application Idea**\n\nI'm solidifying the application's core functionality: a subtitle translation and validation tool. The user can upload two files (original and draft) or just the original. I'm focusing on the AI's role: translating or verifying, with a focus on making translations sound more natural and spoken in Chinese.\n\n\n**Defining the Technical Stack**\n\nI've decided on the technical stack: React, TypeScript, and Tailwind CSS for the frontend. I'll be using the Gemini API through `@google/genai` for the AI integration. I'm structuring the application with file upload functionality for source and optional existing translation SRT/VTT files. I am currently fleshing out the real-time preview and editing of subtitle blocks as well.\n\n\n**Optimizing Processing Efficiency**\n\nI'm now prioritizing efficient processing of large subtitle files. I've settled on batch processing with the Gemini API, sending groups of subtitle blocks to avoid hitting token limits. I'm focusing on crafting specific prompts that emphasize natural, colloquial Chinese and context-aware translations. I have also decided on the self-correction feature of `gemini-3-pro-preview` with the system prompt updates. Also I have the folder structure set up.\n\n\n",
+      "cMarkNode": {}
+    },
+    "createdTimestamp": {
+      "seconds": 1769180579,
+      "nanos": 997000000
+    },
+    "doneTimestamp": {
+      "seconds": 1769180588,
+      "nanos": 944000000
+    }
+  },
+  {
+    "id": 2,
+    "author": "model",
+    "payload": {
+      "type": "generationTable",
+      "entries": [
+        {
+          "path": "metadata.json",
+          "generationType": 0,
+          "isDone": true,
+          "description": "Application metadata containing name and description.",
+          "diffs": [
+            {
+              "target": "",
+              "replacement": "\n{\n  \"name\": \"口语化字幕大师 (Subtitle Colloquializer)\",\n  \"description\": \"一个专业的字幕翻译与校对工具，利用 Gemini API 将原始字幕或已有翻译转化为更加地道、自然的中文口语。支持双字幕对比校对与实时编辑导出。\"\n}\n"
+            }
+          ]
+        },
+        {
+          "path": "index.html",
+          "generationType": 0,
+          "isDone": true,
+          "description": "The main HTML entry point with Tailwind CSS support.",
+          "diffs": [
+            {
+              "target": "",
+              "replacement": "\n<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>口语化字幕大师</title>\n    <script src=\"https://cdn.tailwindcss.com\"></script>\n    <style>\n        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');\n        body {\n            font-family: 'Inter', -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif;\n            background-color: #0f172a;\n            color: #f8fafc;\n        }\n        .custom-scrollbar::-webkit-scrollbar {\n            width: 6px;\n        }\n        .custom-scrollbar::-webkit-scrollbar-track {\n            background: #1e293b;\n        }\n        .custom-scrollbar::-webkit-scrollbar-thumb {\n            background: #475569;\n            border-radius: 10px;\n        }\n        .custom-scrollbar::-webkit-scrollbar-thumb:hover {\n            background: #64748b;\n        }\n    </style>\n</head>\n<body>\n    <div id=\"root\"></div>\n</body>\n</html>\n"
+            }
+          ]
+        },
+        {
+          "path": "types.ts",
+          "generationType": 0,
+          "isDone": true,
+          "description": "TypeScript definitions for the application.",
+          "diffs": [
+            {
+              "target": "",
+              "replacement": "\nexport interface SubtitleBlock {\n  id: number;\n  startTime: string;\n  endTime: string;\n  sourceText: string;\n  translatedText: string;\n  originalDraft?: string;\n  status: 'pending' | 'processing' | 'completed' | 'error';\n}\n\nexport enum ProcessMode {\n  TRANSLATE = 'TRANSLATE',\n  VERIFY = 'VERIFY'\n}\n\nexport interface ProcessingProgress {\n  current: number;\n  total: number;\n}\n"
+            }
+          ]
+        },
+        {
+          "path": "utils/subtitleParser.ts",
+          "generationType": 0,
+          "isDone": true,
+          "description": "Utilities for parsing and generating SRT files.",
+          "diffs": [
+            {
+              "target": "",
+              "replacement": "\nimport { SubtitleBlock } from '../types';\n\nexport const parseSRT = (content: string): Partial<SubtitleBlock>[] => {\n  const blocks: Partial<SubtitleBlock>[] = [];\n  const rawBlocks = content.trim().split(/\\n\\s*\\n/);\n\n  rawBlocks.forEach((rawBlock) => {\n    const lines = rawBlock.split('\\n');\n    if (lines.length >= 3) {\n      const idStr = lines[0].trim();\n      const timeLine = lines[1].trim();\n      const text = lines.slice(2).join('\\n').trim();\n\n      const timeMatch = timeLine.match(/(\\d{2}:\\d{2}:\\d{2},\\d{3})\\s*-->\\s*(\\d{2}:\\d{2}:\\d{2},\\d{3})/);\n      \n      if (timeMatch) {\n        blocks.push({\n          id: parseInt(idStr),\n          startTime: timeMatch[1],\n          endTime: timeMatch[2],\n          sourceText: text,\n          translatedText: '',\n          status: 'pending'\n        });\n      }\n    }\n  });\n\n  return blocks;\n};\n\nexport const generateSRT = (blocks: SubtitleBlock[]): string => {\n  return blocks\n    .map((block) => {\n      return `${block.id}\\n${block.startTime} --> ${block.endTime}\\n${block.translatedText || block.sourceText}\\n`;\n    })\n    .join('\\n');\n};\n"
+            }
+          ]
+        },
+        {
+          "path": "services/geminiService.ts",
+          "generationType": 0,
+          "isDone": true,
+          "description": "Integration with the Gemini API for subtitle translation and colloquialization.",
+          "diffs": [
+            {
+              "target": "",
+              "replacement": "\nimport { GoogleGenAI, Type } from \"@google/genai\";\nimport { SubtitleBlock } from \"../types\";\n\nexport const processSubtitlesBatch = async (\n  blocks: SubtitleBlock[],\n  mode: 'TRANSLATE' | 'VERIFY'\n): Promise<{ id: number; text: string }[]> => {\n  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });\n\n  const systemInstruction = `你是一位专业的影视字幕翻译与本地化专家。\n  你的任务是${mode === 'TRANSLATE' ? '翻译' : '校对并优化'}给定的字幕内容。\n  \n  核心要求：\n  1. 极其口语化：必须符合中文母语者的日常交流习惯。避免机械翻译，使用更自然、更有生命力的表达。\n  2. 简练：字幕每行不宜过长，保持节奏。\n  3. 上下文衔接：根据提供的多个字幕块，保持语气的一致性。\n  4. 语气匹配：如果是对话，请根据内容判断是正式还是非正式语气。\n  \n  输出格式：\n  你必须返回一个JSON数组，其中每个对象包含 'id' 和 'text' 字段。'text' 是处理后的中文口语化内容。`;\n\n  const prompt = mode === 'TRANSLATE' \n    ? `请将以下英文字幕翻译成地道的中文口语：\\n${JSON.stringify(blocks.map(b => ({ id: b.id, content: b.sourceText })))}`\n    : `请对比原始字幕和初步翻译，将初步翻译校对为更地道、口语化的中文：\\n${JSON.stringify(blocks.map(b => ({ id: b.id, source: b.sourceText, draft: b.originalDraft })))}`;\n\n  try {\n    const response = await ai.models.generateContent({\n      model: \"gemini-3-pro-preview\",\n      contents: prompt,\n      config: {\n        systemInstruction,\n        responseMimeType: \"application/json\",\n        responseSchema: {\n          type: Type.ARRAY,\n          items: {\n            type: Type.OBJECT,\n            properties: {\n              id: { type: Type.INTEGER },\n              text: { type: Type.STRING }\n            },\n            required: [\"id\", \"text\"]\n          }\n        }\n      }\n    });\n\n    const result = JSON.parse(response.text || \"[]\");\n    return result;\n  } catch (error) {\n    console.error(\"Gemini API Error:\", error);\n    throw error;\n  }\n};\n"
+            }
+          ]
+        },
+        {
+          "path": "components/Header.tsx",
+          "generationType": 0,
+          "isDone": true,
+          "description": "The navigation header component.",
+          "diffs": [
+            {
+              "target": "",
+              "replacement": "\nimport React from 'react';\n\nconst Header: React.FC = () => {\n  return (\n    <header className=\"border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50\">\n      <div className=\"max-w-7xl mx-auto px-4 h-16 flex items-center justify-between\">\n        <div className=\"flex items-center gap-3\">\n          <div className=\"w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20\">\n            <svg className=\"w-6 h-6 text-white\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">\n              <path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={2} d=\"M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5c1.382.065 2.72.453 3.89 1.115\" />\n            </svg>\n          </div>\n          <h1 className=\"text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400\">\n            口语化字幕大师\n          </h1>\n        </div>\n        <div className=\"flex gap-4\">\n          <span className=\"text-xs text-slate-500 bg-slate-800/50 px-2 py-1 rounded border border-slate-700 self-center\">\n            Powered by Gemini 3.0 Pro\n          </span>\n        </div>\n      </div>\n    </header>\n  );\n};\n\nexport default Header;\n"
+            }
+          ]
+        },
+        {
+          "path": "components/FileUploader.tsx",
+          "generationType": 0,
+          "isDone": true,
+          "description": "Component for uploading subtitle files.",
+          "diffs": [
+            {
+              "target": "",
+              "replacement": "\nimport React, { useRef } from 'react';\n\ninterface FileUploaderProps {\n  label: string;\n  description: string;\n  onFileSelect: (content: string) => void;\n  accept?: string;\n}\n\nconst FileUploader: React.FC<FileUploaderProps> = ({ label, description, onFileSelect, accept = \".srt\" }) => {\n  const fileInputRef = useRef<HTMLInputElement>(null);\n\n  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {\n    const file = e.target.files?.[0];\n    if (file) {\n      const reader = new FileReader();\n      reader.onload = (event) => {\n        const content = event.target?.result as string;\n        onFileSelect(content);\n      };\n      reader.readAsText(file);\n    }\n  };\n\n  return (\n    <div \n      onClick={() => fileInputRef.current?.click()}\n      className=\"group relative border-2 border-dashed border-slate-700 rounded-xl p-6 transition-all hover:border-indigo-500 hover:bg-slate-800/40 cursor-pointer overflow-hidden\"\n    >\n      <input \n        type=\"file\" \n        ref={fileInputRef} \n        onChange={handleFileChange} \n        className=\"hidden\" \n        accept={accept}\n      />\n      <div className=\"flex flex-col items-center text-center\">\n        <div className=\"w-12 h-12 mb-4 bg-slate-800 rounded-full flex items-center justify-center group-hover:bg-indigo-600/20 group-hover:scale-110 transition-transform\">\n          <svg className=\"w-6 h-6 text-slate-400 group-hover:text-indigo-400\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">\n            <path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={2} d=\"M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12\" />\n          </svg>\n        </div>\n        <p className=\"font-medium text-slate-200\">{label}</p>\n        <p className=\"text-sm text-slate-500 mt-1\">{description}</p>\n      </div>\n    </div>\n  );\n};\n\nexport default FileUploader;\n"
+            }
+          ]
+        },
+        {
+          "path": "App.tsx",
+          "generationType": 0,
+          "isDone": true,
+          "description": "Main application logic and layout.",
+          "diffs": [
+            {
+              "target": "",
+              "replacement": "\nimport React, { useState, useCallback, useEffect, useRef } from 'react';\nimport Header from './components/Header';\nimport FileUploader from './components/FileUploader';\nimport { SubtitleBlock, ProcessMode, ProcessingProgress } from './types';\nimport { parseSRT, generateSRT } from './utils/subtitleParser';\nimport { processSubtitlesBatch } from './services/geminiService';\n\nconst App: React.FC = () => {\n  const [blocks, setBlocks] = useState<SubtitleBlock[]>([]);\n  const [sourceLoaded, setSourceLoaded] = useState(false);\n  const [draftLoaded, setDraftLoaded] = useState(false);\n  const [isProcessing, setIsProcessing] = useState(false);\n  const [progress, setProgress] = useState<ProcessingProgress>({ current: 0, total: 0 });\n  const [searchQuery, setSearchQuery] = useState('');\n  \n  const scrollContainerRef = useRef<HTMLDivElement>(null);\n\n  const handleSourceUpload = (content: string) => {\n    const parsed = parseSRT(content) as SubtitleBlock[];\n    setBlocks(parsed);\n    setSourceLoaded(true);\n  };\n\n  const handleDraftUpload = (content: string) => {\n    const parsedDraft = parseSRT(content);\n    setBlocks(prev => {\n      return prev.map(block => {\n        const draft = parsedDraft.find(d => d.id === block.id);\n        return {\n          ...block,\n          originalDraft: draft?.sourceText || '',\n          translatedText: draft?.sourceText || ''\n        };\n      });\n    });\n    setDraftLoaded(true);\n  };\n\n  const runProcessing = async () => {\n    if (blocks.length === 0 || isProcessing) return;\n    \n    setIsProcessing(true);\n    setProgress({ current: 0, total: blocks.length });\n\n    const mode: ProcessMode = draftLoaded ? ProcessMode.VERIFY : ProcessMode.TRANSLATE;\n    const batchSize = 15;\n    const updatedBlocks = [...blocks];\n\n    try {\n      for (let i = 0; i < blocks.length; i += batchSize) {\n        const batch = blocks.slice(i, i + batchSize);\n        \n        // Update status for visual feedback\n        setBlocks(prev => prev.map((b, idx) => \n          (idx >= i && idx < i + batchSize) ? { ...b, status: 'processing' } : b\n        ));\n\n        const results = await processSubtitlesBatch(batch, mode);\n        \n        results.forEach(res => {\n          const targetIndex = updatedBlocks.findIndex(b => b.id === res.id);\n          if (targetIndex !== -1) {\n            updatedBlocks[targetIndex] = {\n              ...updatedBlocks[targetIndex],\n              translatedText: res.text,\n              status: 'completed'\n            };\n          }\n        });\n\n        const currentCount = Math.min(i + batchSize, blocks.length);\n        setProgress({ current: currentCount, total: blocks.length });\n        setBlocks([...updatedBlocks]);\n      }\n    } catch (error) {\n      console.error(\"Batch processing failed\", error);\n      alert(\"处理过程中出现错误，请检查网络或 API Key\");\n    } finally {\n      setIsProcessing(false);\n    }\n  };\n\n  const handleTextChange = (id: number, text: string) => {\n    setBlocks(prev => prev.map(b => b.id === id ? { ...b, translatedText: text } : b));\n  };\n\n  const downloadSRT = () => {\n    const content = generateSRT(blocks);\n    const blob = new Blob([content], { type: 'text/plain' });\n    const url = URL.createObjectURL(blob);\n    const a = document.createElement('a');\n    a.href = url;\n    a.download = `translated_${new Date().getTime()}.srt`;\n    document.body.appendChild(a);\n    a.click();\n    document.body.removeChild(a);\n    URL.revokeObjectURL(url);\n  };\n\n  const filteredBlocks = blocks.filter(b => \n    b.sourceText.toLowerCase().includes(searchQuery.toLowerCase()) || \n    b.translatedText.toLowerCase().includes(searchQuery.toLowerCase())\n  );\n\n  return (\n    <div className=\"min-h-screen flex flex-col\">\n      <Header />\n\n      <main className=\"flex-1 flex flex-col max-w-7xl mx-auto w-full px-4 py-8\">\n        \n        {!sourceLoaded ? (\n          <div className=\"flex-1 flex flex-col items-center justify-center space-y-8 animate-in fade-in duration-700\">\n            <div className=\"text-center max-w-2xl\">\n              <h2 className=\"text-4xl font-extrabold mb-4\">开启地道翻译之旅</h2>\n              <p className=\"text-slate-400 text-lg\">\n                上传您的英文字幕文件，我们将通过 AI 引擎为您提供极其自然、充满生活气息的中文口语翻译。\n              </p>\n            </div>\n            \n            <div className=\"grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl\">\n              <FileUploader \n                label=\"上传源语言字幕\" \n                description=\"必选，通常为 .srt 格式的英文字幕\" \n                onFileSelect={handleSourceUpload}\n              />\n              <div className=\"opacity-50 cursor-not-allowed border-2 border-dashed border-slate-800 rounded-xl p-6 flex flex-col items-center justify-center text-center\">\n                <p className=\"font-medium text-slate-500 italic\">请先上传源字幕</p>\n              </div>\n            </div>\n          </div>\n        ) : (\n          <div className=\"flex flex-col h-[calc(100vh-10rem)]\">\n            {/* Control Bar */}\n            <div className=\"bg-slate-900 border border-slate-800 rounded-t-xl p-4 flex flex-wrap items-center justify-between gap-4\">\n              <div className=\"flex items-center gap-4 flex-1 min-w-[300px]\">\n                <div className=\"relative flex-1 max-w-md\">\n                  <input \n                    type=\"text\" \n                    placeholder=\"搜索字幕内容...\"\n                    value={searchQuery}\n                    onChange={(e) => setSearchQuery(e.target.value)}\n                    className=\"w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500\"\n                  />\n                  <svg className=\"w-4 h-4 text-slate-500 absolute left-3 top-2.5\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">\n                    <path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={2} d=\"M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z\" />\n                  </svg>\n                </div>\n                {!draftLoaded && (\n                  <button \n                    onClick={() => document.getElementById('draft-upload')?.click()}\n                    className=\"text-xs text-indigo-400 hover:text-indigo-300 transition-colors whitespace-nowrap\"\n                  >\n                    + 上传现有翻译进行校对\n                    <input id=\"draft-upload\" type=\"file\" className=\"hidden\" onChange={(e) => {\n                      const file = e.target.files?.[0];\n                      if(file) {\n                        const reader = new FileReader();\n                        reader.onload = (ev) => handleDraftUpload(ev.target?.result as string);\n                        reader.readAsText(file);\n                      }\n                    }} />\n                  </button>\n                )}\n              </div>\n\n              <div className=\"flex items-center gap-3\">\n                {isProcessing && (\n                  <div className=\"flex items-center gap-3 px-4 py-2 bg-indigo-500/10 rounded-lg\">\n                    <div className=\"w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin\"></div>\n                    <span className=\"text-sm font-medium text-indigo-400\">\n                      正在处理: {progress.current} / {progress.total}\n                    </span>\n                  </div>\n                )}\n                <button \n                  onClick={runProcessing}\n                  disabled={isProcessing}\n                  className={`px-6 py-2 rounded-lg font-semibold transition-all shadow-lg ${\n                    isProcessing \n                      ? 'bg-slate-800 text-slate-500 cursor-not-allowed' \n                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20 active:scale-95'\n                  }`}\n                >\n                  {draftLoaded ? '开始口语化校对' : '开始智能翻译'}\n                </button>\n                <button \n                  onClick={downloadSRT}\n                  className=\"px-6 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg font-semibold transition-all\"\n                >\n                  导出结果\n                </button>\n              </div>\n            </div>\n\n            {/* List Header */}\n            <div className=\"bg-slate-800/50 border-x border-slate-800 text-xs font-bold text-slate-500 grid grid-cols-12 px-6 py-3 uppercase tracking-wider\">\n              <div className=\"col-span-1\">ID / 时间</div>\n              <div className=\"col-span-5 px-4\">原始文本</div>\n              <div className=\"col-span-6 px-4\">{draftLoaded ? '口语化翻译 (可编辑)' : '目标翻译 (可编辑)'}</div>\n            </div>\n\n            {/* Subtitle List */}\n            <div \n              ref={scrollContainerRef}\n              className=\"flex-1 bg-slate-900 border border-slate-800 rounded-b-xl overflow-y-auto custom-scrollbar\"\n            >\n              {filteredBlocks.map((block) => (\n                <div \n                  key={block.id} \n                  className={`grid grid-cols-12 px-6 py-4 border-b border-slate-800/50 transition-colors hover:bg-slate-800/20 ${\n                    block.status === 'processing' ? 'bg-indigo-500/5 ring-1 ring-inset ring-indigo-500/20' : ''\n                  }`}\n                >\n                  <div className=\"col-span-1 text-xs space-y-1\">\n                    <span className=\"bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono\">#{block.id}</span>\n                    <div className=\"text-slate-500 font-mono mt-1\">\n                      {block.startTime.split(',')[0]}\n                    </div>\n                  </div>\n                  \n                  <div className=\"col-span-5 px-4\">\n                    <p className=\"text-slate-300 leading-relaxed text-sm\">{block.sourceText}</p>\n                    {block.originalDraft && (\n                      <div className=\"mt-2 pt-2 border-t border-slate-800\">\n                        <span className=\"text-[10px] text-slate-500 uppercase font-bold\">原始草稿:</span>\n                        <p className=\"text-slate-500 text-xs mt-1 italic\">{block.originalDraft}</p>\n                      </div>\n                    )}\n                  </div>\n\n                  <div className=\"col-span-6 px-4\">\n                    <div className=\"relative\">\n                      <textarea \n                        value={block.translatedText}\n                        onChange={(e) => handleTextChange(block.id, e.target.value)}\n                        placeholder={block.status === 'processing' ? '正在深思熟虑...' : '等待处理...'}\n                        className={`w-full bg-slate-800/30 border border-slate-700/50 rounded-lg p-3 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/50 min-h-[80px] transition-all ${\n                          block.status === 'completed' ? 'text-indigo-200' : 'text-slate-400'\n                        }`}\n                      />\n                      {block.status === 'completed' && (\n                        <div className=\"absolute top-2 right-2\">\n                          <svg className=\"w-4 h-4 text-emerald-500\" fill=\"currentColor\" viewBox=\"0 0 20 20\">\n                            <path fillRule=\"evenodd\" d=\"M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z\" clipRule=\"evenodd\" />\n                          </svg>\n                        </div>\n                      )}\n                    </div>\n                  </div>\n                </div>\n              ))}\n              {filteredBlocks.length === 0 && (\n                <div className=\"py-20 flex flex-col items-center justify-center text-slate-500\">\n                  <svg className=\"w-16 h-16 mb-4 opacity-20\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">\n                    <path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={1} d=\"M9.172 9.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z\" />\n                  </svg>\n                  <p>没有找到相关字幕</p>\n                </div>\n              )}\n            </div>\n          </div>\n        )}\n      </main>\n\n      <footer className=\"py-6 text-center text-slate-600 text-xs\">\n        &copy; 2024 口语化字幕大师 - 使用 Gemini API 提供支持\n      </footer>\n    </div>\n  );\n};\n\nexport default App;\n"
+            }
+          ]
+        },
+        {
+          "path": "index.tsx",
+          "generationType": 0,
+          "isDone": true,
+          "description": "Entry point for React 18+ application.",
+          "diffs": [
+            {
+              "target": "",
+              "replacement": "\nimport React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\n\nconst rootElement = document.getElementById('root');\nif (!rootElement) {\n  throw new Error(\"Could not find root element to mount to\");\n}\n\nconst root = ReactDOM.createRoot(rootElement);\nroot.render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n"
+            }
+          ]
+        }
+      ]
+    },
+    "createdTimestamp": {
+      "seconds": 1769180588,
+      "nanos": 944000000
+    },
+    "doneTimestamp": {
+      "seconds": 1769180589,
+      "nanos": 873000000
+    }
+  },
+  {
+    "id": 4,
+    "author": "user",
+    "payload": {
+      "type": "text",
+      "text": "加快检验的效率，一次检验50行\n",
+      "files": [],
+      "fileUploads": [],
+      "cMarkNode": {}
+    },
+    "createdTimestamp": {
+      "seconds": 1769180806,
+      "nanos": 958000000
+    }
+  },
+  {
+    "id": 5,
+    "author": "model",
+    "payload": {
+      "type": "thinking",
+      "text": "**Adjusting Batch Size**\n\nI've zeroed in on the `App.tsx` file. My immediate task is to modify the `batchSize` variable. Currently it is set to 15, but I need to set it to 50. This should streamline the subtitle processing.\n\n\n",
+      "cMarkNode": {}
+    },
+    "createdTimestamp": {
+      "seconds": 1769180806,
+      "nanos": 958000000
+    },
+    "doneTimestamp": {
+      "seconds": 1769180814,
+      "nanos": 162000000
+    }
+  },
+  {
+    "id": 6,
+    "author": "model",
+    "payload": {
+      "type": "generationTable",
+      "entries": [
+        {
+          "path": "App.tsx",
+          "generationType": 1,
+          "isDone": true,
+          "description": "Increase subtitle processing batch size from 15 to 50 for improved efficiency.",
+          "diffs": [
+            {
+              "target": "",
+              "replacement": "\nimport React, { useState, useCallback, useEffect, useRef } from 'react';\nimport Header from './components/Header';\nimport FileUploader from './components/FileUploader';\nimport { SubtitleBlock, ProcessMode, ProcessingProgress } from './types';\nimport { parseSRT, generateSRT } from './utils/subtitleParser';\nimport { processSubtitlesBatch } from './services/geminiService';\n\nconst App: React.FC = () => {\n  const [blocks, setBlocks] = useState<SubtitleBlock[]>([]);\n  const [sourceLoaded, setSourceLoaded] = useState(false);\n  const [draftLoaded, setDraftLoaded] = useState(false);\n  const [isProcessing, setIsProcessing] = useState(false);\n  const [progress, setProgress] = useState<ProcessingProgress>({ current: 0, total: 0 });\n  const [searchQuery, setSearchQuery] = useState('');\n  \n  const scrollContainerRef = useRef<HTMLDivElement>(null);\n\n  const handleSourceUpload = (content: string) => {\n    const parsed = parseSRT(content) as SubtitleBlock[];\n    setBlocks(parsed);\n    setSourceLoaded(true);\n  };\n\n  const handleDraftUpload = (content: string) => {\n    const parsedDraft = parseSRT(content);\n    setBlocks(prev => {\n      return prev.map(block => {\n        const draft = parsedDraft.find(d => d.id === block.id);\n        return {\n          ...block,\n          originalDraft: draft?.sourceText || '',\n          translatedText: draft?.sourceText || ''\n        };\n      });\n    });\n    setDraftLoaded(true);\n  };\n\n  const runProcessing = async () => {\n    if (blocks.length === 0 || isProcessing) return;\n    \n    setIsProcessing(true);\n    setProgress({ current: 0, total: blocks.length });\n\n    const mode: ProcessMode = draftLoaded ? ProcessMode.VERIFY : ProcessMode.TRANSLATE;\n    const batchSize = 50; // Increased from 15 to 50 for better efficiency\n    const updatedBlocks = [...blocks];\n\n    try {\n      for (let i = 0; i < blocks.length; i += batchSize) {\n        const batch = blocks.slice(i, i + batchSize);\n        \n        // Update status for visual feedback\n        setBlocks(prev => prev.map((b, idx) => \n          (idx >= i && idx < i + batchSize) ? { ...b, status: 'processing' } : b\n        ));\n\n        const results = await processSubtitlesBatch(batch, mode);\n        \n        results.forEach(res => {\n          const targetIndex = updatedBlocks.findIndex(b => b.id === res.id);\n          if (targetIndex !== -1) {\n            updatedBlocks[targetIndex] = {\n              ...updatedBlocks[targetIndex],\n              translatedText: res.text,\n              status: 'completed'\n            };\n          }\n        });\n\n        const currentCount = Math.min(i + batchSize, blocks.length);\n        setProgress({ current: currentCount, total: blocks.length });\n        setBlocks([...updatedBlocks]);\n      }\n    } catch (error) {\n      console.error(\"Batch processing failed\", error);\n      alert(\"处理过程中出现错误，请检查网络或 API Key\");\n    } finally {\n      setIsProcessing(false);\n    }\n  };\n\n  const handleTextChange = (id: number, text: string) => {\n    setBlocks(prev => prev.map(b => b.id === id ? { ...b, translatedText: text } : b));\n  };\n\n  const downloadSRT = () => {\n    const content = generateSRT(blocks);\n    const blob = new Blob([content], { type: 'text/plain' });\n    const url = URL.createObjectURL(blob);\n    const a = document.createElement('a');\n    a.href = url;\n    a.download = `translated_${new Date().getTime()}.srt`;\n    document.body.appendChild(a);\n    a.click();\n    document.body.removeChild(a);\n    URL.revokeObjectURL(url);\n  };\n\n  const filteredBlocks = blocks.filter(b => \n    b.sourceText.toLowerCase().includes(searchQuery.toLowerCase()) || \n    b.translatedText.toLowerCase().includes(searchQuery.toLowerCase())\n  );\n\n  return (\n    <div className=\"min-h-screen flex flex-col\">\n      <Header />\n\n      <main className=\"flex-1 flex flex-col max-w-7xl mx-auto w-full px-4 py-8\">\n        \n        {!sourceLoaded ? (\n          <div className=\"flex-1 flex flex-col items-center justify-center space-y-8 animate-in fade-in duration-700\">\n            <div className=\"text-center max-w-2xl\">\n              <h2 className=\"text-4xl font-extrabold mb-4\">开启地道翻译之旅</h2>\n              <p className=\"text-slate-400 text-lg\">\n                上传您的英文字幕文件，我们将通过 AI 引擎为您提供极其自然、充满生活气息的中文口语翻译。\n              </p>\n            </div>\n            \n            <div className=\"grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl\">\n              <FileUploader \n                label=\"上传源语言字幕\" \n                description=\"必选，通常为 .srt 格式的英文字幕\" \n                onFileSelect={handleSourceUpload}\n              />\n              <div className=\"opacity-50 cursor-not-allowed border-2 border-dashed border-slate-800 rounded-xl p-6 flex flex-col items-center justify-center text-center\">\n                <p className=\"font-medium text-slate-500 italic\">请先上传源字幕</p>\n              </div>\n            </div>\n          </div>\n        ) : (\n          <div className=\"flex flex-col h-[calc(100vh-10rem)]\">\n            {/* Control Bar */}\n            <div className=\"bg-slate-900 border border-slate-800 rounded-t-xl p-4 flex flex-wrap items-center justify-between gap-4\">\n              <div className=\"flex items-center gap-4 flex-1 min-w-[300px]\">\n                <div className=\"relative flex-1 max-w-md\">\n                  <input \n                    type=\"text\" \n                    placeholder=\"搜索字幕内容...\"\n                    value={searchQuery}\n                    onChange={(e) => setSearchQuery(e.target.value)}\n                    className=\"w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500\"\n                  />\n                  <svg className=\"w-4 h-4 text-slate-500 absolute left-3 top-2.5\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">\n                    <path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={2} d=\"M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z\" />\n                  </svg>\n                </div>\n                {!draftLoaded && (\n                  <button \n                    onClick={() => document.getElementById('draft-upload')?.click()}\n                    className=\"text-xs text-indigo-400 hover:text-indigo-300 transition-colors whitespace-nowrap\"\n                  >\n                    + 上传现有翻译进行校对\n                    <input id=\"draft-upload\" type=\"file\" className=\"hidden\" onChange={(e) => {\n                      const file = e.target.files?.[0];\n                      if(file) {\n                        const reader = new FileReader();\n                        reader.onload = (ev) => handleDraftUpload(ev.target?.result as string);\n                        reader.readAsText(file);\n                      }\n                    }} />\n                  </button>\n                )}\n              </div>\n\n              <div className=\"flex items-center gap-3\">\n                {isProcessing && (\n                  <div className=\"flex items-center gap-3 px-4 py-2 bg-indigo-500/10 rounded-lg\">\n                    <div className=\"w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin\"></div>\n                    <span className=\"text-sm font-medium text-indigo-400\">\n                      正在处理: {progress.current} / {progress.total}\n                    </span>\n                  </div>\n                )}\n                <button \n                  onClick={runProcessing}\n                  disabled={isProcessing}\n                  className={`px-6 py-2 rounded-lg font-semibold transition-all shadow-lg ${\n                    isProcessing \n                      ? 'bg-slate-800 text-slate-500 cursor-not-allowed' \n                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20 active:scale-95'\n                  }`}\n                >\n                  {draftLoaded ? '开始口语化校对' : '开始智能翻译'}\n                </button>\n                <button \n                  onClick={downloadSRT}\n                  className=\"px-6 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg font-semibold transition-all\"\n                >\n                  导出结果\n                </button>\n              </div>\n            </div>\n\n            {/* List Header */}\n            <div className=\"bg-slate-800/50 border-x border-slate-800 text-xs font-bold text-slate-500 grid grid-cols-12 px-6 py-3 uppercase tracking-wider\">\n              <div className=\"col-span-1\">ID / 时间</div>\n              <div className=\"col-span-5 px-4\">原始文本</div>\n              <div className=\"col-span-6 px-4\">{draftLoaded ? '口语化翻译 (可编辑)' : '目标翻译 (可编辑)'}</div>\n            </div>\n\n            {/* Subtitle List */}\n            <div \n              ref={scrollContainerRef}\n              className=\"flex-1 bg-slate-900 border border-slate-800 rounded-b-xl overflow-y-auto custom-scrollbar\"\n            >\n              {filteredBlocks.map((block) => (\n                <div \n                  key={block.id} \n                  className={`grid grid-cols-12 px-6 py-4 border-b border-slate-800/50 transition-colors hover:bg-slate-800/20 ${\n                    block.status === 'processing' ? 'bg-indigo-500/5 ring-1 ring-inset ring-indigo-500/20' : ''\n                  }`}\n                >\n                  <div className=\"col-span-1 text-xs space-y-1\">\n                    <span className=\"bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono\">#{block.id}</span>\n                    <div className=\"text-slate-500 font-mono mt-1\">\n                      {block.startTime.split(',')[0]}\n                    </div>\n                  </div>\n                  \n                  <div className=\"col-span-5 px-4\">\n                    <p className=\"text-slate-300 leading-relaxed text-sm\">{block.sourceText}</p>\n                    {block.originalDraft && (\n                      <div className=\"mt-2 pt-2 border-t border-slate-800\">\n                        <span className=\"text-[10px] text-slate-500 uppercase font-bold\">原始草稿:</span>\n                        <p className=\"text-slate-500 text-xs mt-1 italic\">{block.originalDraft}</p>\n                      </div>\n                    )}\n                  </div>\n\n                  <div className=\"col-span-6 px-4\">\n                    <div className=\"relative\">\n                      <textarea \n                        value={block.translatedText}\n                        onChange={(e) => handleTextChange(block.id, e.target.value)}\n                        placeholder={block.status === 'processing' ? '正在深思熟虑...' : '等待处理...'}\n                        className={`w-full bg-slate-800/30 border border-slate-700/50 rounded-lg p-3 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/50 min-h-[80px] transition-all ${\n                          block.status === 'completed' ? 'text-indigo-200' : 'text-slate-400'\n                        }`}\n                      />\n                      {block.status === 'completed' && (\n                        <div className=\"absolute top-2 right-2\">\n                          <svg className=\"w-4 h-4 text-emerald-500\" fill=\"currentColor\" viewBox=\"0 0 20 20\">\n                            <path fillRule=\"evenodd\" d=\"M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z\" clipRule=\"evenodd\" />\n                          </svg>\n                        </div>\n                      )}\n                    </div>\n                  </div>\n                </div>\n              ))}\n              {filteredBlocks.length === 0 && (\n                <div className=\"py-20 flex flex-col items-center justify-center text-slate-500\">\n                  <svg className=\"w-16 h-16 mb-4 opacity-20\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">\n                    <path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={1} d=\"M9.172 9.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z\" />\n                  </svg>\n                  <p>没有找到相关字幕</p>\n                </div>\n              )}\n            </div>\n          </div>\n        )}\n      </main>\n\n      <footer className=\"py-6 text-center text-slate-600 text-xs\">\n        &copy; 2024 口语化字幕大师 - 使用 Gemini API 提供支持\n      </footer>\n    </div>\n  );\n};\n\nexport default App;\n"
+            }
+          ]
+        }
+      ]
+    },
+    "createdTimestamp": {
+      "seconds": 1769180814,
+      "nanos": 162000000
+    },
+    "doneTimestamp": {
+      "seconds": 1769180832,
+      "nanos": 780000000
+    }
+  }
+]

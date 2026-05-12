@@ -6,6 +6,32 @@ import { SubtitleBlock, ProcessMode, ProcessingProgress } from './types';
 import { parseSRT, generateSRT } from './utils/subtitleParser';
 import { processSubtitlesBatch } from './services/geminiService';
 
+class RateLimiter {
+  private timestamps: number[] = [];
+  private readonly limit: number;
+  private readonly windowMs: number;
+
+  constructor(limit: number, windowMs: number = 60000) {
+    this.limit = limit;
+    this.windowMs = windowMs;
+  }
+
+  async acquire(onWait?: (waitTimeMs: number) => void): Promise<void> {
+    const now = Date.now();
+    this.timestamps = this.timestamps.filter(t => now - t < this.windowMs);
+
+    if (this.timestamps.length >= this.limit) {
+      const oldest = this.timestamps[0];
+      const waitTime = this.windowMs - (now - oldest);
+      if (onWait) onWait(waitTime);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+      return this.acquire(onWait);
+    }
+
+    this.timestamps.push(Date.now());
+  }
+}
+
 const App: React.FC = () => {
   const [blocks, setBlocks] = useState<SubtitleBlock[]>([]);
   const [sourceLoaded, setSourceLoaded] = useState(false);
@@ -13,8 +39,17 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState<ProcessingProgress>({ current: 0, total: 0 });
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedModel, setSelectedModel] = useState('gemini-3.1-pro-preview');
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const MODELS = [
+    { id: 'gemini-3.1-pro-preview', name: '1. Gemini 3.1 Pro (翻译质量最佳，最强语境与黑话理解)' },
+    { id: 'gemini-3-flash-preview', name: '2. Gemini 3 Flash (质量与速度完美平衡)' },
+    { id: 'gemini-flash-latest', name: '3. Gemini Flash (最新稳定版，性价比高)' },
+    { id: 'gemini-2.5-flash', name: '4. Gemini 2.5 Flash (经典稳定版)' },
+    { id: 'gemini-3.1-flash-lite-preview', name: '5. Gemini 3.1 Flash Lite (极速，适合简单直译)' }
+  ];
 
   const handleSourceUpload = (content: string) => {
     const parsed = parseSRT(content) as SubtitleBlock[];
@@ -44,35 +79,96 @@ const App: React.FC = () => {
     setProgress({ current: 0, total: blocks.length });
 
     const mode: ProcessMode = draftLoaded ? ProcessMode.VERIFY : ProcessMode.TRANSLATE;
-    const batchSize = 50; // Increased from 15 to 50 for better efficiency
-    const updatedBlocks = [...blocks];
+    const batchSize = 100; // Increased back to 100 as requested
 
     try {
+      const batches: SubtitleBlock[][] = [];
       for (let i = 0; i < blocks.length; i += batchSize) {
-        const batch = blocks.slice(i, i + batchSize);
-        
-        // Update status for visual feedback
-        setBlocks(prev => prev.map((b, idx) => 
-          (idx >= i && idx < i + batchSize) ? { ...b, status: 'processing' } : b
-        ));
+        batches.push(blocks.slice(i, i + batchSize));
+      }
 
-        const results = await processSubtitlesBatch(batch, mode);
+      let completedCount = 0;
+      let currentIndex = 0;
+
+      // Rate limiting configuration based on selected model
+      const getModelConfig = (modelId: string) => {
+        if (modelId.includes('pro')) {
+          return { concurrency: 2, rpm: 15 }; // Pro tier limit
+        } else if (modelId.includes('lite')) {
+          return { concurrency: 5, rpm: 60 }; // Lite tier limit
+        } else {
+          return { concurrency: 3, rpm: 60 }; // Flash tier limit (e.g., 60 RPM)
+        }
+      };
+
+      const modelConfig = getModelConfig(selectedModel);
+      const rateLimiter = new RateLimiter(modelConfig.rpm, 60000);
+
+      const processNext = async (): Promise<void> => {
+        if (currentIndex >= batches.length) return;
         
-        results.forEach(res => {
-          const targetIndex = updatedBlocks.findIndex(b => b.id === res.id);
-          if (targetIndex !== -1) {
-            updatedBlocks[targetIndex] = {
-              ...updatedBlocks[targetIndex],
-              translatedText: res.text,
-              status: 'completed'
-            };
-          }
+        const batchIndex = currentIndex++;
+        const batch = batches[batchIndex];
+        const startIndex = batchIndex * batchSize;
+        
+        // Wait for rate limiter
+        await rateLimiter.acquire((waitTime) => {
+          // Update status for visual feedback
+          setBlocks(prev => prev.map((b, idx) => {
+            if (idx >= startIndex && idx < startIndex + batch.length) {
+              return { 
+                ...b, 
+                status: 'processing',
+                translatedText: `等待 API 限制 (${Math.ceil(waitTime/1000)}s)...`
+              };
+            }
+            return b;
+          }));
         });
 
-        const currentCount = Math.min(i + batchSize, blocks.length);
-        setProgress({ current: currentCount, total: blocks.length });
-        setBlocks([...updatedBlocks]);
+        // Update status to processing after wait
+        setBlocks(prev => prev.map((b, idx) => 
+          (idx >= startIndex && idx < startIndex + batch.length) ? { ...b, status: 'processing', translatedText: '正在深思熟虑...' } : b
+        ));
+
+        try {
+          const results = await processSubtitlesBatch(batch, mode, selectedModel);
+          
+          setBlocks(prev => {
+            const next = [...prev];
+            results.forEach(res => {
+              const targetIndex = next.findIndex(b => b.id === res.id);
+              if (targetIndex !== -1) {
+                next[targetIndex] = {
+                  ...next[targetIndex],
+                  translatedText: res.text,
+                  status: 'completed'
+                };
+              }
+            });
+            return next;
+          });
+
+          completedCount += batch.length;
+          setProgress(prev => ({ ...prev, current: Math.min(completedCount, blocks.length) }));
+        } catch (error) {
+          console.error(`Batch ${batchIndex} failed`, error);
+          setBlocks(prev => prev.map((b, idx) => 
+            (idx >= startIndex && idx < startIndex + batch.length) ? { ...b, status: 'error', translatedText: '处理失败，请重试' } : b
+          ));
+        } finally {
+          await processNext();
+        }
+      };
+
+      // Start workers based on concurrency
+      const workers = [];
+      for (let i = 0; i < modelConfig.concurrency && i < batches.length; i++) {
+        workers.push(processNext());
       }
+
+      await Promise.all(workers);
+
     } catch (error) {
       console.error("Batch processing failed", error);
       alert("处理过程中出现错误，请检查网络或 API Key");
@@ -146,6 +242,15 @@ const App: React.FC = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                 </div>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  {MODELS.map(m => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
                 {!draftLoaded && (
                   <button 
                     onClick={() => document.getElementById('draft-upload')?.click()}
